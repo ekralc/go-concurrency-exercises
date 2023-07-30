@@ -29,6 +29,11 @@ type User struct {
 // HandleRequest runs the processes requested by users. Returns false
 // if process had to be killed
 func HandleRequest(process func(), u *User) bool {
+	if u.IsPremium {
+		process()
+		return true
+	}
+
 	ch := make(chan bool)
 	go func() {
 		process()
@@ -36,27 +41,18 @@ func HandleRequest(process func(), u *User) bool {
 	}()
 
 	ticker := time.NewTicker(time.Second)
-	go func() {
-		if u.IsPremium {
-			ch <- true
-			return
-		}
-		for {
-			<-ticker.C
-
-			atomic.AddInt64(&u.TimeUsed, 1)
-			fmt.Printf("User %v has accumulated %v seconds\n", u.ID, u.TimeUsed)
-
-			if atomic.LoadInt64(&u.TimeUsed) >= 10 {
-				ch <- false
-				break
+	for {
+		select {
+		case <-ch:
+			return true
+		case <-ticker.C:
+			if timeUsed := atomic.AddInt64(&u.TimeUsed, 1); timeUsed >= 10 {
+				return false
+			} else {
+				fmt.Printf("User %v has accumulated %v seconds\n", u.ID, timeUsed)
 			}
 		}
-	}()
-
-	res := <-ch
-
-	return res
+	}
 }
 
 func main() {
